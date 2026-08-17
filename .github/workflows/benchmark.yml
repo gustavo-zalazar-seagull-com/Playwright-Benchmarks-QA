@@ -40,8 +40,8 @@ jobs:
 
       - name: Run QAT1 benchmark tests
         env:
-          FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER }}
-          FALABELLA_QAT1_PASS: ${{ secrets.FALABELLA_QAT1_PASS }}
+          FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER || secrets.FALABELLA_PROD_USER }}
+          FALABELLA_QAT1_PASS: ${{ secrets.FALABELLA_QAT1_PASS || secrets.FALABELLA_PROD_PASS }}
         run: npx playwright test tests/falabellaBenchmarksQAT1.js --reporter=list
 
       - name: Upload Playwright HTML report
