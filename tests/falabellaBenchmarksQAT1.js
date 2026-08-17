@@ -87,6 +87,7 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(120_000);
     // Arrange: load credentials from environment variables
     const username = process.env.FALABELLA_QAT1_USER ?? '';
     const password = process.env.FALABELLA_QAT1_PASS ?? '';

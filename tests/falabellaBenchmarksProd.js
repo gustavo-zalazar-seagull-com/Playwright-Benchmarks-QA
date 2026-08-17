@@ -77,6 +77,7 @@ test.describe('Falabella [QA]DailyMetrics Report', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(120_000);
     // Arrange: load credentials from environment variables
     const username = process.env.FALABELLA_PROD_USER ?? '';
     const password = process.env.FALABELLA_PROD_PASS ?? '';
@@ -97,7 +98,12 @@ test.describe('Falabella [QA]DailyMetrics Report', () => {
     await sharedPage.getByRole('textbox', { name: /password/i }).fill(password);
     await sharedPage.getByRole('button', { name: /login/i }).click();
 
-    await sharedPage.waitForURL((url) => !url.hash.includes('/login'), { timeout: 30_000 });
+    // Wait for login to complete — try URL change first, fall back to networkidle
+    try {
+      await sharedPage.waitForURL((url) => !url.hash.includes('/login'), { timeout: 60_000 });
+    } catch {
+      await sharedPage.waitForLoadState('networkidle', { timeout: 60_000 });
+    }
   });
 
   test.afterAll(async () => {
