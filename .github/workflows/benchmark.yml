@@ -1,0 +1,61 @@
+name: Falabella Benchmark
+
+on:
+  workflow_dispatch:          # run manually from the Actions tab
+  schedule:
+    - cron: '30 6 * * *'     # every day at 06:30 UTC (adjust as needed)
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Prod benchmark tests
+        env:
+          FALABELLA_PROD_USER: ${{ secrets.FALABELLA_PROD_USER }}
+          FALABELLA_PROD_PASS: ${{ secrets.FALABELLA_PROD_PASS }}
+        run: npx playwright test tests/falabellaBenchmarksProd.js --reporter=list
+
+      - name: Run Sand benchmark tests
+        env:
+          FALABELLA_SAND_USER: ${{ secrets.FALABELLA_SAND_USER }}
+          FALABELLA_SAND_PASS: ${{ secrets.FALABELLA_SAND_PASS }}
+        run: npx playwright test tests/falabellaBenchmarksSand.js --reporter=list
+
+      - name: Run QAT1 benchmark tests
+        env:
+          FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER }}
+          FALABELLA_QAT1_PASS: ${{ secrets.FALABELLA_QAT1_PASS }}
+        run: npx playwright test tests/falabellaBenchmarksQAT1.js --reporter=list
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload benchmark results HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results/
+          retention-days: 14
