@@ -7,7 +7,7 @@ on:
 
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
 
     steps:
@@ -23,8 +23,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browsers
+      - name: Install Playwright browsers (Linux)
+        if: runner.os == 'Linux'
         run: npx playwright install chromium --with-deps
+
+      - name: Install Playwright browsers (Non-Linux)
+        if: runner.os != 'Linux'
+        run: npx playwright install chromium
 
       - name: Run Prod benchmark tests
         id: run_prod
@@ -70,11 +75,15 @@ jobs:
 
       - name: Fail if any benchmark failed
         if: always()
+        shell: pwsh
         run: |
-          echo "Prod outcome: ${{ steps.run_prod.outcome }}"
-          echo "Sand outcome: ${{ steps.run_sand.outcome }}"
-          echo "QAT1 outcome: ${{ steps.run_qat1.outcome }}"
-          if [ "${{ steps.run_prod.outcome }}" != "success" ] || [ "${{ steps.run_sand.outcome }}" != "success" ] || [ "${{ steps.run_qat1.outcome }}" != "success" ]; then
-            echo "At least one benchmark environment failed."
+          $prod = "${{ steps.run_prod.outcome }}"
+          $sand = "${{ steps.run_sand.outcome }}"
+          $qat1 = "${{ steps.run_qat1.outcome }}"
+          Write-Host "Prod outcome: $prod"
+          Write-Host "Sand outcome: $sand"
+          Write-Host "QAT1 outcome: $qat1"
+          if ($prod -ne 'success' -or $sand -ne 'success' -or $qat1 -ne 'success') {
+            Write-Host 'At least one benchmark environment failed.'
             exit 1
-          fi
+          }
