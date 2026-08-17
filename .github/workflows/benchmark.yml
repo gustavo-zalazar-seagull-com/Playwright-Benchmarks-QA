@@ -32,7 +32,7 @@ jobs:
         env:
           FALABELLA_PROD_USER: ${{ secrets.FALABELLA_PROD_USER }}
           FALABELLA_PROD_PASS: ${{ secrets.FALABELLA_PROD_PASS }}
-        run: npx playwright test tests/falabellaBenchmarksProd.js --reporter=list
+        run: npx playwright test tests/falabellaBenchmarksProd.js
 
       - name: Run Sand benchmark tests
         id: run_sand
@@ -40,7 +40,7 @@ jobs:
         env:
           FALABELLA_SAND_USER: ${{ secrets.FALABELLA_SAND_USER }}
           FALABELLA_SAND_PASS: ${{ secrets.FALABELLA_SAND_PASS }}
-        run: npx playwright test tests/falabellaBenchmarksSand.js --reporter=list
+        run: npx playwright test tests/falabellaBenchmarksSand.js
 
       - name: Run QAT1 benchmark tests
         id: run_qat1
@@ -48,7 +48,7 @@ jobs:
         env:
           FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER || secrets.FALABELLA_PROD_USER }}
           FALABELLA_QAT1_PASS: ${{ secrets.FALABELLA_QAT1_PASS || secrets.FALABELLA_PROD_PASS }}
-        run: npx playwright test tests/falabellaBenchmarksQAT1.js --reporter=list
+        run: npx playwright test tests/falabellaBenchmarksQAT1.js
 
       - name: Upload Playwright HTML report
         if: always()
