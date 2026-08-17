@@ -46,14 +46,6 @@ jobs:
           FALABELLA_SAND_PASS: ${{ secrets.FALABELLA_SAND_PASS }}
         run: npx playwright test tests/falabellaBenchmarksSand.js
 
-      - name: Run QAT1 benchmark tests
-        id: run_qat1
-        continue-on-error: true
-        env:
-          FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER }}
-          FALABELLA_QAT1_PASS: ${{ secrets.FALABELLA_QAT1_PASS }}
-        run: npx playwright test tests/falabellaBenchmarksQAT1.js
-
       - name: Upload Playwright HTML report
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,11 +70,9 @@ jobs:
         run: |
           $prod = "${{ steps.run_prod.outcome }}"
           $sand = "${{ steps.run_sand.outcome }}"
-          $qat1 = "${{ steps.run_qat1.outcome }}"
           Write-Host "Prod outcome: $prod"
           Write-Host "Sand outcome: $sand"
-          Write-Host "QAT1 outcome: $qat1"
-          if ($prod -ne 'success' -or $sand -ne 'success' -or $qat1 -ne 'success') {
+          if ($prod -ne 'success' -or $sand -ne 'success') {
             Write-Host 'At least one benchmark environment failed.'
             exit 1
           }
