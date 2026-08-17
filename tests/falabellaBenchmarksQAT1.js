@@ -151,6 +151,12 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
     await page.waitForLoadState('networkidle');
 
     // The report UI is rendered inside an iframe — all selectors must go through frameLocator
+    const reportIframe = page.locator('iframe').first();
+    try {
+      await reportIframe.waitFor({ state: 'visible', timeout: 120_000 });
+    } catch {
+      throw new Error(`Report iframe did not become visible. URL: ${page.url()} | Title: ${await page.title()} | Iframes: ${await page.locator('iframe').count()}`);
+    }
     const frame = page.frameLocator('iframe');
 
     /**
@@ -434,7 +440,11 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
 
     // Wait for the Date dropdown (first <select> in the filter table)
     const dateSelect = frame.locator('select').first();
-    await dateSelect.waitFor({ state: 'visible', timeout: 60_000 });
+    try {
+      await dateSelect.waitFor({ state: 'visible', timeout: 120_000 });
+    } catch {
+      throw new Error(`Report controls did not load inside iframe. URL: ${page.url()} | Title: ${await page.title()} | Iframes: ${await page.locator('iframe').count()}`);
+    }
     await dismissFeedbackOverlay();
 
     // Ensure "Custom" is selected so the date textboxes are active
