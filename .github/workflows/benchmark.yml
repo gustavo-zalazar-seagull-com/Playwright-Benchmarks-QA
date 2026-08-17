@@ -50,8 +50,8 @@ jobs:
         id: run_qat1
         continue-on-error: true
         env:
-          FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER || secrets.FALABELLA_PROD_USER }}
-          FALABELLA_QAT1_PASS: ${{ secrets.FALABELLA_QAT1_PASS || secrets.FALABELLA_PROD_PASS }}
+          FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER }}
+          FALABELLA_QAT1_PASS: ${{ secrets.FALABELLA_QAT1_PASS }}
         run: npx playwright test tests/falabellaBenchmarksQAT1.js
 
       - name: Upload Playwright HTML report

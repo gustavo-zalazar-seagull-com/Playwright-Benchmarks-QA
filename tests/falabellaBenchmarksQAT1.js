@@ -114,6 +114,9 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
     } catch {
       await sharedPage.waitForLoadState('networkidle', { timeout: 60_000 });
     }
+    if (sharedPage.url().includes('/login')) {
+      throw new Error(`QAT1 authentication did not complete. Still on login page: ${sharedPage.url()}`);
+    }
   });
 
   for (const { startTime, endTime, section, rangeIndex, rangeTotal } of ALL_RANGES) {

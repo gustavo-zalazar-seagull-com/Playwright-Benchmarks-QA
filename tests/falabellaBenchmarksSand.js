@@ -104,6 +104,9 @@ test.describe('Falabella [Sandbox] DailyMetrics Report', () => {
     } catch {
       await sharedPage.waitForLoadState('networkidle', { timeout: 60_000 });
     }
+    if (sharedPage.url().includes('/login')) {
+      throw new Error(`Sand authentication did not complete. Still on login page: ${sharedPage.url()}`);
+    }
   });
 
   test.afterAll(async () => {
