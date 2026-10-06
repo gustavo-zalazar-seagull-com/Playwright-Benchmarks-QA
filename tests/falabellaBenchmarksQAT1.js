@@ -61,7 +61,8 @@ const inventoryResults = [];
  * @param {number} ms
  */
 const formatDuration = (ms) => {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (!Number.isFinite(ms) || ms < 0) throw new Error(`Invalid benchmark duration: ${ms}`);
+  const totalSeconds = Math.round(ms / 1000);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
@@ -97,7 +98,7 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
     }
 
     // Create a single browser context and page reused across all range tests
-    const context = await browser.newContext();
+    const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
     sharedPage = await context.newPage();
 
     // Act: navigate to login page and authenticate once
@@ -164,159 +165,21 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
 
     /**
      * @param {string} columnName
-     * @param {{ preferStableTopValue?: boolean, timeRange?: { start: string, end: string }, pick?: 'first' | 'min' | 'max' }} [options]
      */
-    const extractFirstRowValue = async (columnName, options = {}) => {
-      return frame.locator('body').evaluate((body, { targetColumnName, timeRange }) => {
-        const tables = [...body.ownerDocument.querySelectorAll('table')];
-        const table = tables.find((candidate) => {
-          const headerRows = [...candidate.querySelectorAll('tr')].filter((row) =>
-            [...row.querySelectorAll('th')].some((th) => th.textContent?.trim() === targetColumnName)
-          );
-
-          if (!headerRows.length) {
-            return false;
-          }
-
-          return [...candidate.querySelectorAll('tbody tr')].some(
-            (row) => row.querySelectorAll('td').length >= 10
-          );
-        });
-
-        if (!table) {
-          throw new Error(`Could not locate the results table containing ${targetColumnName}`);
-        }
-
-        const headerRows = [...table.querySelectorAll('tr')].filter((row) =>
-          [...row.querySelectorAll('th')].some((th) => th.textContent?.trim() === targetColumnName)
+    const extractFirstRowValue = async (columnName) => {
+      return frame.locator('table.vzx-static-table').evaluate((table, targetColumnName) => {
+        const headers = [...table.querySelectorAll('thead th')].map(header => header.textContent?.trim() ?? '');
+        const columnIndex = headers.indexOf(targetColumnName);
+        if (columnIndex < 0) throw new Error(`Missing column: ${targetColumnName}`);
+        const rows = [...table.querySelectorAll(':scope > tbody > tr')].filter(row =>
+          row.querySelectorAll(':scope > td').length === headers.length
         );
-        const headerRow = headerRows[headerRows.length - 1];
-        const headers = [...headerRow.querySelectorAll('th')].map((th) => th.textContent?.trim() ?? '');
-        const targetColumnIndex = headers.indexOf(targetColumnName);
-
-        if (targetColumnIndex < 0) {
-          throw new Error(`Could not determine ${targetColumnName} column index`);
-        }
-
-        const allDataRows = [...table.querySelectorAll('tbody tr')].filter(
-          (row) => row.querySelectorAll('td').length >= headers.length
-        );
-
-        // If a time range is provided, keep only rows whose target-column timestamp
-        // falls within [start, end) so out-of-range values sorted to the top are skipped.
-        const toSecondsOfDay = (/** @type {string} */ val) => {
-          // Parse HH:MM:SS directly to avoid timezone shifts from Date parsing.
-          const match = val.match(/(\d{1,2}):(\d{2}):(\d{2})/);
-          if (!match) return -1;
-          const hh = Number(match[1]);
-          const mm = Number(match[2]);
-          const ss = Number(match[3]);
-          return hh * 3600 + mm * 60 + ss;
-        };
-        const parseHMS = (/** @type {string} */ hms) => {
-          const [h, m, s] = hms.split(':').map(Number);
-          return h * 3600 + m * 60 + s;
-        };
-
-        let dataRows = allDataRows;
-        if (timeRange) {
-          const startSecs = parseHMS(timeRange.start);
-          const endSecs   = parseHMS(timeRange.end);
-          const inRange = allDataRows.filter((row) => {
-            const cells = [...row.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '');
-            const normalized = cells.slice(-headers.length);
-            const secs = toSecondsOfDay(normalized[targetColumnIndex] ?? '');
-            return secs >= startSecs && secs < endSecs;
-          });
-          if (inRange.length > 0) dataRows = inRange;
-        }
-
-        const firstDataRow = dataRows[0];
-
-        const topValues = dataRows.slice(0, 5).map((row) => {
-          const rowCells = [...row.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '');
-          const normalizedRowCells = rowCells.slice(-headers.length);
-          return normalizedRowCells[targetColumnIndex] ?? '';
-        });
-        const topRows = dataRows.slice(0, 5).map((row) => {
-          const rowCells = [...row.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '');
-          const normalizedRowCells = rowCells.slice(-headers.length);
-          return Object.fromEntries(headers.map((h, idx) => [h, normalizedRowCells[idx] ?? '']));
-        });
-        const allRows = dataRows.map((row) => {
-          const rowCells = [...row.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '');
-          const normalizedRowCells = rowCells.slice(-headers.length);
-          return Object.fromEntries(headers.map((h, idx) => [h, normalizedRowCells[idx] ?? '']));
-        });
-        const columnValues = dataRows.map((row) => {
-          const rowCells = [...row.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '');
-          const normalizedRowCells = rowCells.slice(-headers.length);
-          return normalizedRowCells[targetColumnIndex] ?? '';
-        });
-
-        if (!firstDataRow) {
-          throw new Error('Could not locate the first results row');
-        }
-
-        const cells = [...firstDataRow.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '');
-        const normalizedCells = cells.slice(-headers.length);
-
+        if (!rows.length) throw new Error('No data rows in the report grid');
         return {
-          firstRowValue: normalizedCells[targetColumnIndex] ?? '',
-          resultsRowCount: allDataRows.length,
-          topValues,
-          topRows,
-          allRows,
-          columnValues,
+          firstRowValue: rows[0].querySelectorAll(':scope > td')[columnIndex].textContent?.trim() ?? '',
+          resultsRowCount: rows.length,
         };
-      }, { targetColumnName: columnName, timeRange: options.timeRange ?? null }).then((result) => {
-        const { preferStableTopValue = false, pick = 'first' } = options;
-
-        if (pick !== 'first') {
-          const parseValueMs = (/** @type {string} */ value) => {
-            const match = value.match(/(\d{1,2}):(\d{2}):(\d{2})/);
-            if (!match) return NaN;
-            const hh = Number(match[1]);
-            const mm = Number(match[2]);
-            const ss = Number(match[3]);
-            return (hh * 3600 + mm * 60 + ss) * 1000;
-          };
-
-          const sourceValues = result.columnValues ?? result.topValues;
-          const candidates = sourceValues
-            .filter(Boolean)
-            .map((value) => ({ value, ms: parseValueMs(value) }))
-            .filter((v) => !isNaN(v.ms));
-
-          if (candidates.length > 0) {
-            let selected = candidates[0];
-            for (const c of candidates.slice(1)) {
-              if (pick === 'min' && c.ms < selected.ms) selected = c;
-              if (pick === 'max' && c.ms > selected.ms) selected = c;
-            }
-            const selectedIndex = sourceValues.findIndex((v) => v === selected.value);
-            return {
-              ...result,
-              firstRowValue: selected.value,
-              selectedRow: selectedIndex >= 0 ? (result.allRows?.[selectedIndex] ?? null) : null,
-            };
-          }
-        }
-
-        if (
-          preferStableTopValue &&
-          result.topValues.length >= 3 &&
-          result.topValues[0] !== result.topValues[1] &&
-          result.topValues[1] === result.topValues[2]
-        ) {
-          return {
-            ...result,
-            firstRowValue: result.topValues[1],
-          };
-        }
-
-        return result;
-      });
+      }, columnName);
     };
 
     /**
@@ -324,121 +187,37 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
      * The overlay may be rendered in the iframe OR the main page — checks both.
      */
     const dismissFeedbackOverlay = async () => {
-      // Check both main page and iframe since the overlay's host varies by environment
       for (const ctx of [page, frame]) {
-        try {
-          const overlay = ctx.locator('.overlay-container');
-          if (!(await overlay.isVisible({ timeout: 1_500 }))) continue;
-          const closeSelectors = [
-            '.overlay-container button',
-            '.overlay-container [class*="close"]',
-            '.overlay-container [class*="dismiss"]',
-            '.overlay-container [aria-label*="close" i]',
-            '.overlay-container [aria-label*="dismiss" i]',
-          ];
-          let clicked = false;
-          for (const sel of closeSelectors) {
-            const btn = ctx.locator(sel).first();
-            if (await btn.isVisible({ timeout: 500 })) {
-              await btn.click({ force: true });
-              clicked = true;
-              break;
-            }
-          }
-          if (!clicked) await page.keyboard.press('Escape');
-          await overlay.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
-        } catch {
-          // Not found in this context — try next
-        }
+        const closeButton = ctx.locator('.overlay-container .close-toast').first();
+        if (!(await closeButton.isVisible())) continue;
+        await closeButton.click();
+        await expect(closeButton).toBeHidden();
       }
     };
 
-    /**
-     * Waits until the "Loading report..." indicator inside the iframe is gone.
-     * The indicator is controlled by ng-if so it is added/removed from the DOM.
-     */
-    const waitForReportReady = async () => {
+    /** @param {() => Promise<void>} action */
+    const waitForReportReady = async (action) => {
       const loadingIndicator = frame.locator('[translate="@REPORT_LOADING_MESSAGE"]');
-      // Give the click a moment to trigger the loading state
-      await page.waitForTimeout(500);
-      // Wait for the loading indicator to appear (it may take a few seconds after the click).
-      // This try/catch is intentionally separate from the "wait for hidden" block below so
-      // that a slow-appearing indicator (> 3 s) does not cause us to skip the hidden wait.
-      try {
-        await loadingIndicator.waitFor({ state: 'visible', timeout: 3_000 });
-      } catch {
-        // Indicator didn't appear within 3 s — may have appeared and gone already, or never shown
-      }
-      // Always wait for the indicator to be gone before proceeding.
-      // If it was never in the DOM this resolves immediately; if it appeared late we still catch it.
-      try {
-        await loadingIndicator.waitFor({ state: 'hidden', timeout: 120_000 });
-      } catch {
-        // Ignore — indicator already detached or hidden
-      }
-      try {
-        await page.waitForLoadState('networkidle', { timeout: 30_000 });
-      } catch {
-        // networkidle not reached within 30s — loading indicator is already gone, proceed
-      }
+      const [response] = await Promise.all([
+        page.waitForResponse(response =>
+          new URL(response.url()).pathname === '/riot-core-services/api/reportExecution/14599' &&
+          response.request().method() === 'POST', { timeout: 120_000 }),
+        action(),
+      ]);
+      expect(response.ok(), 'Report execution request failed').toBe(true);
+      expect(await response.finished(), 'Report response did not finish').toBeNull();
+      await loadingIndicator.waitFor({ state: 'hidden', timeout: 120_000 });
+      await expect(frame.getByRole('button', { name: 'Run', exact: true })).not.toHaveClass(/\bdisabled\b/, { timeout: 120_000 });
     };
 
     /**
-     * Returns the current sort direction for a column header by inspecting the
-     * element's aria-sort attribute, CSS classes, child icon classes, text content,
-     * and CSS pseudo-element content (which covers CSS-rendered ▲/▼ arrows).
-     * @param {import('@playwright/test').Locator} headerLocator
-     * @returns {Promise<'asc' | 'desc' | 'unknown'>}
-     */
-    const getSortDirection = async (headerLocator) => {
-      return headerLocator.evaluate((th) => {
-        // 1. aria-sort attribute (most standards-compliant)
-        const ariaSort = (th.getAttribute('aria-sort') || '').toLowerCase();
-        if (ariaSort === 'ascending')  return 'asc';
-        if (ariaSort === 'descending') return 'desc';
-
-        // 2. CSS classes on the th element itself
-        const thClass = (th.className || '').toLowerCase();
-        if (thClass.includes('sort-asc')  || thClass.includes('-asc')  || /\basc\b/.test(thClass))  return 'asc';
-        if (thClass.includes('sort-desc') || thClass.includes('-desc') || /\bdesc\b/.test(thClass)) return 'desc';
-
-        // 3. Child icon/span element classes
-        for (const el of th.querySelectorAll('i, span, em, button, a')) {
-          const cls = (el.className || '').toLowerCase();
-          if (cls.includes('sort-asc')  || cls.includes('fa-sort-up')   || cls.includes('fa-sort-asc')  || /\basc\b/.test(cls))  return 'asc';
-          if (cls.includes('sort-desc') || cls.includes('fa-sort-down') || cls.includes('fa-sort-desc') || /\bdesc\b/.test(cls)) return 'desc';
-        }
-
-        // 4. Unicode sort arrow characters in visible text content
-        const text = th.textContent || '';
-        if (text.includes('\u25B2') || text.includes('\u2191')) return 'asc';   // ▲ ↑
-        if (text.includes('\u25BC') || text.includes('\u2193')) return 'desc';  // ▼ ↓
-
-        // 5. CSS pseudo-element content (handles CSS-rendered arrows)
-        try {
-          const before = window.getComputedStyle(th, '::before').content;
-          const after  = window.getComputedStyle(th, '::after').content;
-          const pseudo = (before + after).replace(/['"]/g, '');
-          if (pseudo.includes('\u25B2') || pseudo.includes('\u2191')) return 'asc';
-          if (pseudo.includes('\u25BC') || pseudo.includes('\u2193')) return 'desc';
-        } catch { /* ignore */ }
-
-        return 'unknown';
-      });
-    };
-
-    /**
-     * After a header click, verifies the sort direction matches the desired direction.
-     * If the detected direction differs, clicks the header once more to flip it.
      * @param {import('@playwright/test').Locator} headerLocator
      * @param {'asc' | 'desc'} desired
      */
     const ensureSortDirection = async (headerLocator, desired) => {
-      const current = await getSortDirection(headerLocator);
-      if (current !== 'unknown' && current !== desired) {
-        await headerLocator.click({ force: true });
-        await waitForReportReady();
-      }
+      const icon = desired === 'asc' ? '.icon-table-sortingup' : '.icon-table-sortingdown';
+      await expect(headerLocator).toHaveClass(/\bactive\b/);
+      await expect(headerLocator.locator(icon)).toBeVisible();
     };
 
     // Wait for the Date dropdown (first <select> in the filter table)
@@ -461,6 +240,7 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
 
     await startInput.waitFor({ state: 'visible', timeout: 30_000 });
     await endInput.waitFor({ state: 'visible', timeout: 10_000 });
+    expect(new Date(`${TODAY}T${startTime}`).getTime(), 'Start Date must precede End Date').toBeLessThan(new Date(`${TODAY}T${endTime}`).getTime());
 
     // Clear end date first so the UI's start-before-end validation does not
     // fire while an intermediate start value exceeds the previous end value.
@@ -481,21 +261,18 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
     await endInput.press('Backspace');
     await endInput.pressSequentially(END_DATE, { delay: 40 });
     await endInput.press('Tab');
+    await expect(startInput).toHaveValue(START_DATE);
+    await expect(endInput).toHaveValue(END_DATE);
 
     // Dismiss overlay again before clicking Run — it can reappear after date entry
     await dismissFeedbackOverlay();
 
-    // Click the Run button to execute the report with the custom date range.
-    // Use evaluate() to fire a JS click directly on the element, bypassing any
-    // overlay that may intercept pointer events at the rendered layer.
     progress(2, 'Setting date range and running report...');
-    const runBtn = frame.getByRole('button', { name: 'Run' });
-    await runBtn.waitFor({ state: 'visible', timeout: 30_000 });
-    await runBtn.evaluate((el) => /** @type {HTMLElement} */(el).click());
+    await waitForReportReady(() => frame.getByRole('button', { name: 'Run', exact: true }).click());
 
     // Determine quickly whether we have data or a "No records" state.
     // This avoids waiting for header timeouts when the no-records banner appears first.
-    const tsEdgeInHeader = frame.locator('th', { hasText: 'tsEdgeIn' }).last();
+    const tsEdgeInHeader = frame.locator('table.fixed-report-header th', { hasText: 'tsEdgeIn' });
     const noRecordsMessage = frame.locator('text=No records to display').first();
     const runOutcome = await Promise.any([
       tsEdgeInHeader.waitFor({ state: 'visible', timeout: 120_000 }).then(() => 'hasData'),
@@ -515,10 +292,7 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
       return;
     }
     progress(3, 'Sorting by tsEdgeIn ascending (▲), waiting for report...');
-    await tsEdgeInHeader.click({ force: true });
-    await waitForReportReady();
-    // Verify arrow is pointing up (ascending); if the column was already sorted asc
-    // the first click flips it to desc — correct that now.
+    await waitForReportReady(() => tsEdgeInHeader.click());
     await ensureSortDirection(tsEdgeInHeader, 'asc');
 
     // Re-check for no-records: the tsEdgeIn header may appear briefly before the
@@ -532,57 +306,47 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
       return;
     }
 
-    const tsEdgeInData = await extractFirstRowValue('tsEdgeIn', { timeRange: { start: startTime, end: endTime }, pick: 'min' });
+    const tsEdgeInData = await extractFirstRowValue('tsEdgeIn');
 
     // Retrieve and log result rows from the report table
     console.log(`Report rows returned for ${START_DATE} → ${END_DATE}: ${tsEdgeInData.resultsRowCount}`);
     console.log(`First row tsEdgeIn value: ${tsEdgeInData.firstRowValue}`);
 
-    const tsCoreInHeader = frame.locator('th', { hasText: 'tsCoreIn' }).last();
+    const tsCoreInHeader = frame.locator('table.fixed-report-header th', { hasText: 'tsCoreIn' });
     await tsCoreInHeader.waitFor({ state: 'visible', timeout: 30_000 });
     progress(4, 'Sorting by tsCoreIn ascending (▲), waiting for report...');
-    await tsCoreInHeader.click({ force: true });
-
-    // Wait for tsCoreIn click report to load
-    await waitForReportReady();
+    await waitForReportReady(() => tsCoreInHeader.click());
     // Verify arrow is pointing up (ascending) for tsCoreIn - ensure it's correct
     await ensureSortDirection(tsCoreInHeader, 'asc');
 
     // Take the first row value after ascending sort (no pick min/max)
-    const tsCoreInData = await extractFirstRowValue('tsCoreIn', { timeRange: { start: startTime, end: endTime }, pick: 'min' });
+    const tsCoreInData = await extractFirstRowValue('tsCoreIn');
     console.log(`First row tsCoreIn value: ${tsCoreInData.firstRowValue}`);
 
     // Click on tsMongoIn header and ensure descending sort
-    const tsMongoInHeader = frame.locator('th', { hasText: 'tsMongoIn' }).last();
+    const tsMongoInHeader = frame.locator('table.fixed-report-header th', { hasText: 'tsMongoIn' });
     await tsMongoInHeader.waitFor({ state: 'visible', timeout: 30_000 });
     progress(5, 'Sorting by tsMongoIn descending (▼), waiting for report...');
     // Requirement: tsMongoIn is clicked twice, waiting for the report between clicks.
-    await tsMongoInHeader.click({ force: true });
-
-    // Wait for tsMongoIn click report to load
-    await waitForReportReady();
+    await waitForReportReady(() => tsMongoInHeader.click());
+    await ensureSortDirection(tsMongoInHeader, 'asc');
 
     progress(6, 'Applying second tsMongoIn click and verifying descending (▼)...');
-    await tsMongoInHeader.click({ force: true });
-    await waitForReportReady();
+    await waitForReportReady(() => tsMongoInHeader.click());
+    await ensureSortDirection(tsMongoInHeader, 'desc');
 
-    let mongoDirection = await getSortDirection(tsMongoInHeader);
-    console.log(`tsMongoIn sort direction after two clicks: ${mongoDirection}`);
-    if (mongoDirection === 'asc') {
-      await tsMongoInHeader.click({ force: true });
-      await waitForReportReady();
-      mongoDirection = await getSortDirection(tsMongoInHeader);
-      console.log(`tsMongoIn sort direction after correction click: ${mongoDirection}`);
-    }
-
-    // Use max-in-range for tsMongoIn as a fallback when UI sort metadata is inconsistent.
-    const tsMongoInData = await extractFirstRowValue('tsMongoIn', { timeRange: { start: startTime, end: endTime }, pick: 'max' });
+    const tsMongoInData = await extractFirstRowValue('tsMongoIn');
 
     console.log(`First row tsMongoIn value: ${tsMongoInData.firstRowValue}`);
 
     // Calculate time difference between tsMongoIn and tsEdgeIn
     /** @param {string} dateString */
-    const parseTime = (dateString) => new Date(dateString).getTime();
+    const parseTime = (dateString) => {
+      expect(dateString, 'Unexpected report timestamp format').toMatch(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2} (AM|PM)$/);
+      const timestamp = new Date(dateString).getTime();
+      expect(Number.isFinite(timestamp), 'Invalid report timestamp').toBe(true);
+      return timestamp;
+    };
     const tsEdgeInMs = parseTime(tsEdgeInData.firstRowValue);
     const tsMongoInMs = parseTime(tsMongoInData.firstRowValue);
     const timeDifferenceMs = tsMongoInMs - tsEdgeInMs;
@@ -598,14 +362,13 @@ test.describe('Falabella [QAT1] DailyMetrics Report', () => {
     // Accumulate for summary table
     const tsCoreInMs = parseTime(tsCoreInData.firstRowValue);
     const cubesDiffMs = tsCoreInMs - tsEdgeInMs;
-    if (tsCoreInMs < tsEdgeInMs) {
-      console.warn(`tsCoreIn (${tsCoreInData.firstRowValue}) is earlier than tsEdgeIn (${tsEdgeInData.firstRowValue}) for ${startTime} → ${endTime}`);
-    }
+    expect(tsCoreInMs, 'tsCoreIn must be greater than or equal to tsEdgeIn').toBeGreaterThanOrEqual(tsEdgeInMs);
+    expect(tsMongoInMs, 'tsMongoIn must be greater than or equal to tsEdgeIn').toBeGreaterThanOrEqual(tsEdgeInMs);
     const rowData = {
       rangeLabel: `${toAmPm(startTime)} - ${toAmPm(endTime)}`,
-      startSend: tsEdgeInData.firstRowValue.slice(11, 19),
-      endVizix:  tsMongoInData.firstRowValue.slice(11, 19),
-      endCubes:  tsCoreInData.firstRowValue.slice(11, 19),
+      startSend: new Date(tsEdgeInMs).toTimeString().slice(0, 8),
+      endVizix:  new Date(tsMongoInMs).toTimeString().slice(0, 8),
+      endCubes:  new Date(tsCoreInMs).toTimeString().slice(0, 8),
       vizixTime: formatDuration(timeDifferenceMs),
       cubesTime: formatDuration(cubesDiffMs),
     };
