@@ -2,6 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { extractFirstRowValueInRange } from './helpers/reportRows';
 
 const BASE_URL = 'https://falabella.sandbox.ytem.io';
 const LOGIN_URL = `${BASE_URL}/console/#/login`;
@@ -168,19 +169,7 @@ test.describe('Falabella [Sandbox] DailyMetrics Report', () => {
      * @param {string} columnName
      */
     const extractFirstRowValue = async (columnName) => {
-      return frame.locator('table.vzx-static-table').evaluate((table, targetColumnName) => {
-        const headers = [...table.querySelectorAll('thead th')].map(header => header.textContent?.trim() ?? '');
-        const columnIndex = headers.indexOf(targetColumnName);
-        if (columnIndex < 0) throw new Error(`Missing column: ${targetColumnName}`);
-        const rows = [...table.querySelectorAll(':scope > tbody > tr')].filter(row =>
-          row.querySelectorAll(':scope > td').length === headers.length
-        );
-        if (!rows.length) throw new Error('No data rows in the report grid');
-        return {
-          firstRowValue: rows[0].querySelectorAll(':scope > td')[columnIndex].textContent?.trim() ?? '',
-          resultsRowCount: rows.length,
-        };
-      }, columnName);
+      return extractFirstRowValueInRange(frame, columnName, START_DATE, END_DATE);
     };
 
     /** @param {() => Promise<void>} action */

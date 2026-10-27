@@ -2,6 +2,17 @@ name: Falabella Benchmark
 
 on:
   workflow_dispatch:          # run manually from the Actions tab
+    inputs:
+      environment:
+        description: Environment to benchmark
+        type: choice
+        required: true
+        default: All
+        options:
+          - All
+          - Prod
+          - Sand
+          - QAT1
   schedule:
     - cron: '0 6 * * *'     # every day at 06:00 UTC
 
@@ -9,6 +20,8 @@ jobs:
   benchmark:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      BENCHMARK_ENVIRONMENT: ${{ inputs.environment || 'All' }}
 
     steps:
       - name: Checkout repository
@@ -38,6 +51,7 @@ jobs:
 
       - name: Run Prod benchmark tests
         id: run_prod
+        if: env.BENCHMARK_ENVIRONMENT == 'All' || env.BENCHMARK_ENVIRONMENT == 'Prod'
         continue-on-error: true
         env:
           FALABELLA_PROD_USER: ${{ secrets.FALABELLA_PROD_USER }}
@@ -47,6 +61,7 @@ jobs:
 
       - name: Run Sand benchmark tests
         id: run_sand
+        if: env.BENCHMARK_ENVIRONMENT == 'All' || env.BENCHMARK_ENVIRONMENT == 'Sand'
         continue-on-error: true
         env:
           FALABELLA_SAND_USER: ${{ secrets.FALABELLA_SAND_USER }}
@@ -56,6 +71,7 @@ jobs:
 
       - name: Run QAT1 benchmark tests
         id: run_qat1
+        if: env.BENCHMARK_ENVIRONMENT == 'All' || env.BENCHMARK_ENVIRONMENT == 'QAT1'
         continue-on-error: true
         env:
           FALABELLA_QAT1_USER: ${{ secrets.FALABELLA_QAT1_USER }}
@@ -85,13 +101,17 @@ jobs:
         if: always()
         shell: powershell
         run: |
-          $prod = "${{ steps.run_prod.outcome }}"
-          $sand = "${{ steps.run_sand.outcome }}"
-          $qat1 = "${{ steps.run_qat1.outcome }}"
-          Write-Host "Prod outcome: $prod"
-          Write-Host "Sand outcome: $sand"
-          Write-Host "QAT1 outcome: $qat1"
-          if ($prod -ne 'success' -or $sand -ne 'success' -or $qat1 -ne 'success') {
-            Write-Host 'At least one benchmark environment failed.'
-            exit 1
+          $outcomes = [ordered]@{
+            Prod = "${{ steps.run_prod.outcome }}"
+            Sand = "${{ steps.run_sand.outcome }}"
+            QAT1 = "${{ steps.run_qat1.outcome }}"
+          }
+          foreach ($environment in $outcomes.Keys) {
+            Write-Host "$environment outcome: $($outcomes[$environment])"
+            if ($env:BENCHMARK_ENVIRONMENT -eq 'All' -or $env:BENCHMARK_ENVIRONMENT -eq $environment) {
+              if ($outcomes[$environment] -ne 'success') {
+                Write-Host "$environment benchmark did not succeed."
+                exit 1
+              }
+            }
           }
