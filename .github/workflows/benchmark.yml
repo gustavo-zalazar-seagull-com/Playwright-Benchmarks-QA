@@ -14,7 +14,7 @@ on:
           - Sand
           - QAT1
   schedule:
-    - cron: '0 6 * * *'     # every day at 06:00 UTC
+    - cron: '0 10 * * *'    # every day at 06:00 GMT-4 (10:00 UTC)
 
 jobs:
   benchmark:
